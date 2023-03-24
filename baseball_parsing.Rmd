@@ -1,0 +1,311 @@
+---
+title: "Baseball Parsing Assignment"
+author: "Nagaprasad Rudrapatna"
+date: "10/14/2021"
+output: html_document
+---
+
+#### Phase 1: The Parser
+
+```{r read-data, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stringr)
+library(rlang)
+
+event_file <- readxl::read_excel("C:\\Users\\naga2\\Downloads\\2020_ari.xlsx") # I'm from Arizona, so I am interested in the Diamondbacks 
+
+# To analyze a different dataset (different home team or season), first download the event file from Retrosheet and then input the correct path to the file inside the `readxl::read_excel()` function
+
+ef <- data.frame(event_file)
+ef <- ef %>% # clean version of file
+  filter(id == "play" | id == "com") %>%
+  rename("inning" = "ARI202007300") %>% # this column header will vary per file
+  rename("home(1)/away(0)" = "...3") %>%
+  rename("batter id" = "...4") %>%
+  rename("count on batter" = "...5") %>%
+  rename("pitches to this batter" = "...6") %>%
+  rename("play" = "...7") %>%
+  select(-1)
+work <- ef %>% 
+  select(-4, -5) 
+```
+
+```{r outs}
+for (i in 1:nrow(work)){
+  pl <- work$play[i]
+  a <- str_locate(pl, "[.]")[1]
+  b <- substr(pl, a+1, a+3)
+  c <- str_locate(pl, "[;]")[1]
+  d <- substr(pl, c+1, c+3)
+  e <- substr(pl, c+5, c+7)
+  f <- substr(pl, c+9, c+11)
+  for (j in 1:9){
+    work$out[i] = if_else(str_detect(pl, "DP"), 2, 
+                  if_else(str_detect(pl, "TP"), 3,        
+                  if_else(str_sub(pl, 1, 2) == paste0(j, "/"), 1, 
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "BX1") & ! str_detect(substr(pl, str_locate(pl, "BX1")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "BX2") & ! str_detect(substr(pl, str_locate(pl, "BX2")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "BX3") & ! str_detect(substr(pl, str_locate(pl, "BX3")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "BXH") & ! str_detect(substr(pl, str_locate(pl, "BXH")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "1X2") & ! str_detect(substr(pl, str_locate(pl, "1X2")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "1X3") & ! str_detect(substr(pl, str_locate(pl, "1X3")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "1XH") & ! str_detect(substr(pl, str_locate(pl, "1XH")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "2X3") & ! str_detect(substr(pl, str_locate(pl, "2X3")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "2XH") & ! str_detect(substr(pl, str_locate(pl, "2XH")[1], str_length(pl)), "E")), 1,
+                  if_else((str_detect(substr(pl, a, str_length(pl)), "3XH") & ! str_detect(substr(pl, str_locate(pl, "3XH")[1], str_length(pl)), "E")), 1, 0, 0), 0), 0), 0), 0), 0), 0), 0), 0), 0), 0), 0), 0)
+    if (work$out[i] > 0){
+      break
+    }
+  }
+  if (work$out[i] == 0){ 
+    for (k in 10:98){
+      work$out[i] = if_else(str_sub(pl, 1, 2) == paste0(k, ""), 1,
+                            if_else((str_sub(pl, 1, 2) == "PO" & ! str_detect(pl, "E")), 1, 
+                            if_else((str_sub(pl, 1, 1) == "K" & ! str_detect(pl, "B-1")), 1, 
+                            if_else((str_sub(pl, 1, 2) == "CS" & ! str_detect(pl, "E")), 1,
+                            if_else(str_sub(pl, 1, 4) == "POCS", 1, 0, 0), 0), 0), 0), 0)   
+      if (work$out[i] > 0){
+        break
+      }
+    }
+  }
+  
+work$r_outs[1] = work$out[1]
+    
+work$implicit_advance[i] = if_else(((str_detect(pl, "W") & ! str_detect(pl, "WP"))|str_detect(pl, "IW")|str_detect(pl, "HP")|str_detect(pl, "C/E1")|str_detect(pl, "C/E2")|str_detect(pl, "C/E3")|str_detect(pl, "E")|str_detect(pl, "FC")|((str_detect(pl, "S[1-9]")) & (! str_detect(pl, "BX")) & (! str_detect(pl, "B-2")) & (! str_detect(pl, "B-3")) & (! str_detect(pl, "B-H")))), "B-1", if_else(str_detect(pl, "HR"), "B-H", if_else(((str_detect(pl, "D[1-9]")) & (! str_detect(pl, "BX")) & (! str_detect(pl, "B-1")) & (! str_detect(pl, "B-3")) & (! str_detect(pl, "B-H"))), "B-2", if_else(((str_detect(pl, "T[1-9]")) & (! str_detect(pl, "BX")) & (! str_detect(pl, "B-1")) & (! str_detect(pl, "B-2")) & (! str_detect(pl, "B-H"))),"B-3", "", ""), ""), ""), "")
+}
+
+for (i in 1:(nrow(work)-1)){
+  work$r_outs[i+1] = if_else(((work$r_outs[i] < 3 & work$inning[i+1] != 1) | (work$r_outs[i] < 3 & work$inning[i+1] == 1 & (work$inning[i] == 1 | str_detect(work$inning[i], "[a-zA-Z]")))), work$out[i+1] + work$r_outs[i], work$out[i+1], work$out[i+1])
+}
+```
+
+```{r state-pre-post-AB}
+ev_1 <- work$play[1]
+ia_1 <- work$implicit_advance[1]
+work$B1[1] = if_else(((str_detect(ev_1, "-1") | ((str_detect(ia_1, "-1")) & (! str_detect(ev_1, "B-2")) & (! str_detect(ev_1, "B-3")) & (! str_detect(ev_1, "B-H")))) & ((! str_detect(ev_1, "1-")) & (! str_detect(ev_1, "HR")) & (! str_detect(ev_1, "[1-9][(]1[)]")) & (! str_detect(ev_1, "X1")) & (! str_detect(ev_1, "1X")))), 1, 0, 0)
+work$B2[1] = if_else(((str_detect(ev_1, "-2") | ((str_detect(ia_1, "-2")) & (! str_detect(ev_1, "B-1")) & (! str_detect(ev_1, "B-3")) & (! str_detect(ev_1, "B-H")))) & ((! str_detect(ev_1, "2-")) & (! str_detect(ev_1, "HR")) & (! str_detect(ev_1, "[1-9][(]2[)]")) & (! str_detect(ev_1, "X2")) & (! str_detect(ev_1, "2X")))), 1, 0, 0)
+work$B3[1] = if_else(((str_detect(ev_1, "-3") | ((str_detect(ia_1, "-3")) & (! str_detect(ev_1, "B-1")) & (! str_detect(ev_1, "B-2")) & (! str_detect(ev_1, "B-H")))) & ((! str_detect(ev_1, "3-")) & (! str_detect(ev_1, "HR")) & (! str_detect(ev_1, "[1-9][(]3[)]")) & (! str_detect(ev_1, "X3")) & (! str_detect(ev_1, "3X")))), 1, 0, 0)
+
+work$B1[1] = if_else(str_detect(work$inning[1], "[a-zA-Z]"), 0, work$B1[1])
+work$B2[1] = if_else(str_detect(work$inning[1], "[a-zA-Z]"), 0, work$B2[1])
+work$B3[1] = if_else(str_detect(work$inning[1], "[a-zA-Z]"), 0, work$B3[1])
+
+for (j in 1:(nrow(work)-1)){
+  ev <- work$play[j+1]
+  ia <- work$implicit_advance[j+1]
+  work$B1[j+1] = if_else(((str_detect(ev, "-1") | ((str_detect(ia, "-1")) & (! str_detect(ev, "B-2")) & (! str_detect(ev, "B-3")) & (! str_detect(ev, "B-H")))) | ((! str_detect(ev, "1-")) & (! str_detect(ev, "HR")) & (! str_detect(ev, "[1-9][(]1[)]")) & (! str_detect(ev, "X1")) & (! str_detect(ev, "1X")) & (((work$`home(1)/away(0)`[j+1] == work$`home(1)/away(0)`[j]) & (work$inning[j+1] == work$inning[j])) | (str_detect(work$inning[j], "[a-zA-Z]"))) & (work$B1[j] == 1))), 1, 0, 0)
+  work$B2[j+1] = if_else(((str_detect(ev, "-2") | ((str_detect(ia, "-2")) & (! str_detect(ev, "B-1")) & (! str_detect(ev, "B-3")) & (! str_detect(ev, "B-H")))) | ((! str_detect(ev, "2-")) & (! str_detect(ev, "HR")) & (! str_detect(ev, "[1-9][(]2[)]")) & (! str_detect(ev, "X2")) & (! str_detect(ev, "2X")) & (((work$`home(1)/away(0)`[j+1] == work$`home(1)/away(0)`[j]) & (work$inning[j+1] == work$inning[j])) | (str_detect(work$inning[j], "[a-zA-Z]"))) & (work$B2[j] == 1))), 1, 0, 0)
+  work$B3[j+1] = if_else(((str_detect(ev, "-3") | ((str_detect(ia, "-3")) & (! str_detect(ev, "B-1")) & (! str_detect(ev, "B-2")) & (! str_detect(ev, "B-H")))) | ((! str_detect(ev, "3-")) & (! str_detect(ev, "HR")) & (! str_detect(ev, "[1-9][(]3[)]")) & (! str_detect(ev, "X3")) & (! str_detect(ev, "3X")) & (((work$`home(1)/away(0)`[j+1] == work$`home(1)/away(0)`[j]) & (work$inning[j+1] == work$inning[j])) | (str_detect(work$inning[j], "[a-zA-Z]"))) & (work$B3[j] == 1))), 1, 0, 0)
+  
+  work$B1[j+1] = if_else(str_detect(work$inning[j+1], "[a-zA-Z]"), work$B1[j], work$B1[j+1])
+  work$B2[j+1] = if_else(str_detect(work$inning[j+1], "[a-zA-Z]"), work$B2[j], work$B2[j+1])
+  work$B3[j+1] = if_else(str_detect(work$inning[j+1], "[a-zA-Z]"), work$B3[j], work$B3[j+1])
+
+  work$state_afterAB[j] = paste0(work$r_outs[j], work$B1[j], work$B2[j], work$B3[j])
+  work$state_beforeAB[1] = paste0(0, 0, 0 ,0)
+  work$state_beforeAB[j+1] = if_else(((work$`home(1)/away(0)`[j+1] == work$`home(1)/away(0)`[j]) & (work$inning[j+1] == work$inning[j])) | (str_detect(work$inning[j+1], "[a-zA-Z]")) | (str_detect(work$inning[j], "[a-zA-Z]")), work$state_afterAB[j], work$state_beforeAB[1])
+}  
+work <- work %>%
+  rename(total_outs = r_outs) %>%
+  select(inning, `home(1)/away(0)`, `batter id`, play, implicit_advance, out, total_outs, B1, B2, B3, state_beforeAB, state_afterAB)
+```
+
+```{r points-scored}
+for (i in 1:nrow(work)) {
+  ev <- work$play[i]
+  ia <- work$implicit_advance[i]
+  b_1 <- work$B1[i]
+  b_2 <- work$B2[i]
+  b_3 <- work$B3[i]
+  x <- 0
+  
+  x = if_else((str_detect(ev, "B-H")) | (str_detect(ia, "B-H")), x+1, x, x) 
+  x = if_else((str_detect(ev, "1-H")), x+1, x, x)
+  x = if_else((str_detect(ev, "2-H")), x+1, x, x)
+  x = if_else((str_detect(ev, "3-H")), x+1, x, x)
+  x = if_else((str_detect(ev, "HR")), x+b_1+b_2+b_3, x, x)
+
+  work$points_scoredAB[i] = x
+}
+```
+
+```{r}
+# adding game score to the dataframe
+
+work$running_score_h[1] = if_else(work$`home(1)/away(0)`[1] == 1, work$points_scoredAB[1], 0)
+work$running_score_a[1] = if_else(work$`home(1)/away(0)`[1] == 0, work$points_scoredAB[1], 0)
+
+for (j in 1:(nrow(work)-1)) {
+  p <- work$points_scoredAB[j+1]
+  
+# running score for home (h) and away (a) teams in each game
+  
+  work$running_score_h[j+1] <- if_else(((work$`home(1)/away(0)`[j+1] == 1) & !((work$inning[j+1] == 1) & ((work$inning[j] == 9) | (str_detect(work$inning[j], "[a-zA-Z]")))) | (str_detect(work$inning[j+1], "[a-zA-Z]"))), p + work$running_score_h[j], if_else(((work$inning[j+1] == 1) & ((work$inning[j] == 9) | (str_detect(work$inning[j], "[a-zA-Z]")))), p, work$running_score_h[j]))
+  
+  work$running_score_a[j+1] <- if_else(((work$`home(1)/away(0)`[j+1] == 0) & !((work$inning[j+1] == 1) & ((work$inning[j] == 9) | (str_detect(work$inning[j], "[a-zA-Z]")))) | (str_detect(work$inning[j+1], "[a-zA-Z]"))), p + work$running_score_a[j], if_else(((work$inning[j+1] == 1) & ((work$inning[j] == 9) | (str_detect(work$inning[j], "[a-zA-Z]")))), p, work$running_score_a[j]))
+}
+
+View(work) # this is the final dataframe produced by the parser
+```
+
+#### Phase 2 (D)
+
+Now, let's take a closer look at the Diamondbacks from the 2020 MLB season.
+
+```{r}
+diamond <- work %>%
+  filter(`home(1)/away(0)` == 1) # Diamondbacks are the home team
+
+bunt <- diamond %>%
+  filter(str_detect(play, "BP") | str_detect(play, "BG") | str_detect(play, "BL") | str_detect(play, "BGDP") | str_detect(play, "BPDP") | str_detect(play, "SH"))
+
+nrow(bunt)
+nrow(diamond)
+nrow(bunt) / nrow(diamond)
+
+bunt_bg <- diamond %>%
+  filter(str_detect(play, "BG"))
+nrow(bunt_bg)
+
+# View(bunt) - discern player names from Retrosheet IDs
+```
+
+Based on this event file, bunting was very uncommon for Arizona Diamondback players during the 2020 season. In fact, there were only eight bunt plays out of a total of 1357 plays (0.0059). Of these eight bunt plays, seven were ground ball bunts (BG). The remaining bunt play was a pop up bunt (BP). Five Diamondbacks batters bunted: Nick Ahmed, Ketel Marte, Starling Marte, Josh Rojas, and Daulton Varsho.
+
+```{r}
+bunt1 <- bunt %>%
+  count(state_beforeAB)
+
+dia1 <- diamond %>%
+  count(state_beforeAB)
+
+combo <- right_join(dia1, bunt1, "state_beforeAB")
+combo <- combo %>%
+  rename("total plays" = "n.x") %>%
+  rename("bunts" = "n.y") %>%
+  mutate("probability" = bunts / `total plays`) %>%
+  arrange(desc(probability)) %>%
+  filter(probability >= 0.05)
+combo
+```
+
+During the 2020 MLB season, the Arizona Diamondbacks mainly (threshold: probability >= 0.05) considered bunting when the state before the current at-bat was `0010` (i.e. no outs, runner on 2nd base) or `2001` (i.e. two outs, runner on 3rd base). Thus, when there were runners in scoring position (2nd and/or 3rd base(s) loaded), the likelihood of bunting was highest. This aligns with our intuition about when a sacrificial play might be beneficial.
+
+```{r}
+indiv <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP"))) %>% # define scoring position as having runners on 2nd and/or 3rd base
+  na.omit()
+tot_p <- indiv %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a <- indiv %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined <- inner_join(tot_p, num_a, "batter id")
+combined <- combined %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 20) %>% # I want to evaluate players who are at the plate at least twenty times during the season with runners in scoring position
+  arrange(desc(`pts:attempts ratio`))
+combined
+```
+
+Based on the points-to-attempts ratios (for batters with at least 20 trips to the plate with runners in scoring position), `kellc002` (0.652), `walkc002` (0.526), and `perad001` (0.500) were the highest (overall) achievers. Using this website (https://www.retrosheet.org/retroID.htm), we can cross-reference the Retrosheet IDs and learn the names of these high-achieving batters. We learn that the highest-achieving batters (in decreasing order of points-to-attempts ratio with runners in scoring position) on the Arizona Diamondbacks (during the 2020 season) were: Carson Kelly (0.652), Christian Walker (0.526), and David Peralta (0.500).
+
+```{r}
+indiv_out0 <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP")) & (total_outs == 0)) %>% 
+  na.omit()
+tot_p_out0 <- indiv_out0 %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a_out0 <- indiv_out0 %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined_out0 <- inner_join(tot_p_out0, num_a_out0, "batter id")
+combined_out0 <- combined_out0 %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 5) %>% # I want to evaluate players who are at the plate (with no outs) at least five times during the season with runners in scoring position
+  arrange(desc(`pts:attempts ratio`))
+combined_out0
+```
+
+When we add the condition that there are no outs before the current at-bat, the results indeed change (we have to set a different threshold since there are less observations to consider; this is natural since it is less common to have runners in scoring position with no outs). The highest-achieving batters (in decreasing order of points-to-attempts ratio with runners in scoring position) when there were no outs are: Kole Calhoun (0.800) and Christian Walker (0.600).
+
+```{r}
+indiv_out1 <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP")) & (total_outs == 1)) %>% 
+  na.omit()
+tot_p_out1 <- indiv_out1 %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a_out1 <- indiv_out1 %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined_out1 <- inner_join(tot_p_out1, num_a_out1, "batter id")
+combined_out1 <- combined_out1 %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 10) %>% # I want to evaluate players who are at the plate (with one out) at least ten times during the season with runners in scoring position
+  arrange(desc(`pts:attempts ratio`))
+combined_out1
+```
+
+When we instead add the condition that there is one out before the current at-bat, the results change again (compared to no outs). The highest-achieving batters (in decreasing order of points-to-attempts ratio with runners in scoring position) when there was one out are: Carson Kelly (0.818), Christian Walker (0.615), and David Peralta (0.545). Interestingly, the top three batters overall (with any number of outs) were also the top three batters when there was one out.
+
+```{r}
+indiv_out2 <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP")) & (total_outs == 2)) %>% 
+  na.omit()
+tot_p_out2 <- indiv_out2 %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a_out2 <- indiv_out2 %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined_out2 <- inner_join(tot_p_out2, num_a_out2, "batter id")
+combined_out2 <- combined_out2 %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 10) %>% # I want to evaluate players who are at the plate (with two outs) at least ten times during the season with runners in scoring position
+  arrange(desc(`pts:attempts ratio`))
+combined_out2
+```
+
+When we instead add the condition that there are two outs before the current at-bat, the results change once more. The highest-achieving batters (in decreasing order of points-to-attempts ratio with runners in scoring position) when there were two outs are: Christian Walker (0.750), Nick Ahmed (0.733), and Eduardo Escobar (0.500).
+
+Regardless of the number of outs prior to his at-bat, Christian Walker consistently batted above average (points-to-attempts ratio > 0.500) with runners in scoring position. Walker particularly excelled when there were two outs before his at-bat (crunch-time). Carson Kelly was the best batter overall (with runners in scoring position), largely because he excelled when there was one out before his at-bat.
+
+```{r}
+indiv_score <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP")) & (abs(running_score_h - running_score_a) <= 2)) %>% # game score within two runs
+  na.omit()
+tot_p_score <- indiv_score %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a_score <- indiv_score %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined_score <- inner_join(tot_p_score, num_a_score, "batter id")
+combined_score <- combined_score %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 10) %>% # I want to evaluate players who are at the plate at least ten times during the season with runners in scoring position and the game score within two runs
+  arrange(desc(`pts:attempts ratio`))
+combined_score
+```
+
+When we instead add the condition that the scores of the home and away teams are within two runs before the current at-bat, the results change slightly. The highest-achieving batters (in decreasing order of points-to-attempts ratio with runners in scoring position) when the scores were close (within two runs) are: Christian Walker (0.625), Carson Kelly (0.538), and David Peralta (0.500). Interestingly, the top three batters overall (when the score can be lopsided or tight) were also the top three batters when the score was close between the home and away teams. One difference, however, is the order of the three. When the game was tight (scores within two runs), Christian Walker outperformed Carson Kelly. Combining this conclusion with their respective performances when there were two outs before the at-bat, Christian Walker was a "clutch" batter during the 2020 MLB season. He performed better than Kelly in critical at-bat situations (i.e. two outs, scores within two runs).
+
+```{r}
+indiv_score2 <- diamond %>%
+  filter((substr(state_beforeAB, 3, 4) != "00") & (! str_detect(play, "NP")) & (abs(running_score_h - running_score_a) <= 2) & (total_outs == 2)) %>% # game score within two runs
+  na.omit()
+tot_p_score2 <- indiv_score2 %>%
+  group_by(`batter id`) %>%
+  count(`batter id`, wt = sum(points_scoredAB), sort = T, name = "total_pts")
+num_a_score2 <- indiv_score2 %>%
+  count(`batter id`, sort = T, name = "num_attempts")
+combined_score2 <- inner_join(tot_p_score2, num_a_score2, "batter id")
+combined_score2 <- combined_score2 %>%
+  mutate("pts:attempts ratio" = total_pts / num_attempts) %>%
+  filter(num_attempts >= 5) %>% # I want to evaluate players who are at the plate (with two outs) at least five times during the season with runners in scoring position and the game score within two runs
+  arrange(desc(`pts:attempts ratio`))
+combined_score2
+```
+
+The above table provides further evidence that Christian Walker was a "clutch" player for the Arizona Diamondbacks during the 2020 season. When there were two outs and the scores of the home and away teams were within two runs before the at-bat, the highest-achieving batter (according to points-to-attempts ratio) was Christian Walker (1.000).
+
